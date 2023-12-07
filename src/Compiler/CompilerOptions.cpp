@@ -285,6 +285,26 @@ llvm::cl::opt<std::string> reportHeapAfter("report-heap-after",
                    "<output-files-base-path>.heap.log"),
     llvm::cl::init(""), llvm::cl::cat(OnnxMlirOptions));
 
+llvm::cl::opt<bool> useTAFFO("useTAFFO",
+    llvm::cl::desc("use TAFFO"), llvm::cl::init(false),
+    llvm::cl::cat(OnnxMlirOptions));
+
+llvm::cl::opt<bool> debugTAFFO("debugTAFFO",
+    llvm::cl::desc("debug TAFFO"), llvm::cl::init(false),
+    llvm::cl::cat(OnnxMlirOptions));
+
+llvm::cl::opt<double> TAFFOlb("TAFFOlb",
+    llvm::cl::desc("TAFFO: lower bound"), llvm::cl::init(0),
+    llvm::cl::cat(OnnxMlirOptions));
+
+llvm::cl::opt<double> TAFFOub("TAFFOub",
+    llvm::cl::desc("TAFFO: upper bound"), llvm::cl::init(0),
+    llvm::cl::cat(OnnxMlirOptions));
+
+llvm::cl::opt<bool> dumpKernelInputs("dumpKernelInputs",
+    llvm::cl::desc("dump kernel inputs"), llvm::cl::init(false),
+    llvm::cl::cat(OnnxMlirOptions));
+
 llvm::cl::list<std::string> functionsToDecompose("functions-to-decompose",
     llvm::cl::desc("Specify ONNX functions to decompose"),
     llvm::cl::cat(OnnxMlirCommonOptions));

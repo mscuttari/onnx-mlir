@@ -53,6 +53,9 @@ void addONNXToMLIRPasses(mlir::PassManager &pm, bool targetCPU) {
   // In future, only the dynamic pass, ONNXOpTransformPass, will be used for
   // this function.
 
+  if (dumpKernelInputs)
+    pm.addPass(createDumpKernelInputsPass());
+
   pm.addInstrumentation(
       std::make_unique<DisposableGarbageCollector>(pm.getContext()));
 
@@ -169,7 +172,7 @@ void addKrnlToLLVMPasses(
   pm.addNestedPass<func::FuncOp>(krnl::createLowerKrnlRegionPass());
 
   // Hoist allocations out of loop nests to avoid stack overflow.
-  pm.addPass(bufferization::createBufferLoopHoistingPass());
+  //pm.addPass(bufferization::createBufferLoopHoistingPass());
 
   // Use MLIR buffer deallocation pass to emit buffer deallocs.
   // Currently this has to be done *after* lowering the affine dialect because
@@ -190,15 +193,25 @@ void addKrnlToLLVMPasses(
   // pm.addNestedPass<func::FuncOp>(krnl::createConvertSeqToMemrefPass());
   pm.addNestedPass<func::FuncOp>(mlir::createConvertSCFToCFPass());
 
-  pm.addPass(mlir::memref::createFoldMemRefAliasOpsPass());
+  if (useTAFFO) {
+    pm.addPass(createConvertAllocsToGlobalsPass());
+  }
+
+  //pm.addPass(mlir::memref::createFoldMemRefAliasOpsPass());
   pm.addPass(krnl::createConvertKrnlToLLVMPass(verifyInputTensors,
-      /*useOpaquePointers=*/true,
+      /*useOpaquePointers=*/!useTAFFO,
       /*useLRODATA=*/(modelSize == ModelSize::large),
       /*storeConstantsToFile=*/storeConstantsToFile,
       constantsToFileSingleThreshold, constantsToFileTotalThreshold,
       outputNameNoExt));
   pm.addPass(mlir::createReconcileUnrealizedCastsPass());
   pm.addPass(mlir::createCanonicalizerPass());
+
+  /*
+  if (useTAFFO) {
+    pm.addPass(createInsertTAFFOAnnotationsPass(TAFFOlb, TAFFOub));
+  }
+  */
 }
 
 InputIRLevelType determineInputIRLevel(mlir::OwningOpRef<ModuleOp> &module) {

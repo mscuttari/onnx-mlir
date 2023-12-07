@@ -4,6 +4,17 @@
 //   Details can be found in docs/ImportONNXDefs.md .
 //********************************************************
 
+def ONNXPrintOp:ONNX_Op<"Print", []> {
+  let summary = "ONNX Print operation";
+  let description = [{
+  Print a tensor.
+  }];
+  let arguments = (ins AnyTypeOf<[
+    TensorOf<[UI8]>, TensorOf<[UI16]>, TensorOf<[UI32]>, TensorOf<[UI64]>, TensorOf<[I8]>, TensorOf<[I16]>, TensorOf<[I32]>, TensorOf<[I64]>, TensorOf<[F16]>, TensorOf<[F32]>, TensorOf<[F64]>, TensorOf<[BF16]>,
+    MemRefOf<[UI8]>, MemRefOf<[UI16]>, MemRefOf<[UI32]>, MemRefOf<[UI64]>, MemRefOf<[I8]>, MemRefOf<[I16]>, MemRefOf<[I32]>, MemRefOf<[I64]>, MemRefOf<[F16]>, MemRefOf<[F32]>, MemRefOf<[F64]>, MemRefOf<[BF16]>]>:$X);
+  let results = (outs);
+}
+
 def ONNXAbsOp:ONNX_Op<"Abs",
   [Pure, DeclareOpInterfaceMethods<ShapeInferenceOpInterface>, DeclareOpInterfaceMethods<ShapeHelperOpInterface>]> {
   let summary = "ONNX Abs operation";

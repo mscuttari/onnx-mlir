@@ -20,6 +20,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ModRef.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
@@ -66,7 +67,7 @@ std::optional<std::string> getEnvVar(std::string name) {
 
 // Make a function that forces preserving all files using the runtime arguments
 // and/or the overridePreserveFiles enum.
-enum class KeepFilesOfType { All, MLIR, LLVMIR, Bitcode, Object, None };
+enum class KeepFilesOfType { All, MLIR, LLVMIR, LL, Bitcode, Object, None };
 
 // Value below override at compile time by effectively setting the requested
 // flags.
@@ -374,6 +375,85 @@ std::string getTargetFilename(
   llvm_unreachable("all cases should be handled in switch");
 }
 
+static void insertTAFFOAnnotations(llvm::Module& llvmModule) {
+  llvm::SmallVector<llvm::GlobalVariable*> globals;
+
+  for (auto& global : llvmModule.globals()) {
+    if (global.getName().starts_with("alloc")) {
+      globals.push_back(&global);
+    }
+  }
+
+  if (globals.empty()) {
+    return;
+  }
+
+  auto i8Type = llvm::IntegerType::get(llvmModule.getContext(), 8);
+
+  std::string annotationStr =
+      "target('onnx') scalar(range(" + std::to_string(TAFFOlb) + ", " +
+      std::to_string(TAFFOub) + ") final disabled)";
+
+  auto* annotation = new llvm::GlobalVariable(
+      llvmModule,
+      llvm::ArrayType::get(i8Type, annotationStr.size() + 1),
+      true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantDataArray::getString(
+          llvmModule.getContext(), annotationStr, true),
+      "taffo_annotation");
+
+  auto* fileName = new llvm::GlobalVariable(
+      llvmModule, llvm::ArrayType::get(i8Type, 8),
+      true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantDataArray::getString(
+          llvmModule.getContext(), "unknown", true),
+      "file_name");
+
+  llvm::SmallVector<llvm::Type*> structTypes;
+
+  auto i8PtrType = llvm::PointerType::get(i8Type, 0);
+  auto i32Type = llvm::IntegerType::get(llvmModule.getContext(), 32);
+  auto i32PtrType = llvm::PointerType::get(i32Type, 0);
+
+  structTypes.push_back(i8PtrType);
+  structTypes.push_back(i8PtrType);
+  structTypes.push_back(i8PtrType);
+  structTypes.push_back(i32Type);
+  structTypes.push_back(i8PtrType);
+
+  auto structType = llvm::StructType::get(llvmModule.getContext(), structTypes);
+  auto structArrayType = llvm::ArrayType::get(structType, globals.size());
+
+  llvm::SmallVector<llvm::Constant*> globalConstants;
+
+  for (auto& global : globals) {
+    llvm::SmallVector<llvm::Constant*> structValues;
+
+    structValues.push_back(llvm::ConstantExpr::getBitCast(global, i8PtrType));
+    structValues.push_back(llvm::ConstantExpr::getBitCast(annotation, i8PtrType));
+    structValues.push_back(llvm::ConstantExpr::getBitCast(fileName, i8PtrType));
+    structValues.push_back(llvm::ConstantInt::get(i32Type, 3));
+    structValues.push_back(llvm::ConstantPointerNull::get(i8PtrType));
+
+    auto structValue = llvm::ConstantStruct::get(structType, structValues);
+    globalConstants.push_back(structValue);
+  }
+
+  auto globalAnnotationsValue = llvm::ConstantArray::get(
+      structArrayType, globalConstants);
+
+  auto* globalAnnotations = new llvm::GlobalVariable(
+      llvmModule, structArrayType, false,
+      llvm::GlobalValue::ExternalLinkage, // Should be AppendingLinkage, but llc fails
+      globalAnnotationsValue, "llvm.global.annotations");
+}
+
+static void adjustLLVMIRForTAFFO(llvm::Module& llvmModule) {
+  for (auto& func : llvmModule) {
+    func.removeFnAttr(llvm::Attribute::Memory);
+  }
+}
+
 // Write LLVM optimized bitcode.
 // Returns 0 on success, error code on failure.
 static int genLLVMBitcode(const mlir::OwningOpRef<ModuleOp> &module,
@@ -397,13 +477,24 @@ static int genLLVMBitcode(const mlir::OwningOpRef<ModuleOp> &module,
   }
 
   llvm::LLVMContext llvmContext;
+
+  if (useTAFFO) {
+    llvmContext.setOpaquePointers(false);
+  }
+
   mlir::registerBuiltinDialectTranslation(*(module.get().getContext()));
   mlir::registerLLVMDialectTranslation(*(module.get().getContext()));
   std::unique_ptr<llvm::Module> llvmModule =
       mlir::translateModuleToLLVMIR(*module, llvmContext);
+
   if (!llvmModule) {
     llvm::errs() << "Failed to translate module to LLVMIR.\n";
     return CompilerFailureInMLIRToLLVM;
+  }
+
+  if (useTAFFO) {
+    insertTAFFOAnnotations(*llvmModule);
+    adjustLLVMIRForTAFFO(*llvmModule);
   }
 
   // Tailor LLVMIR to add features that cannot be done with MLIR LLVMIR.
@@ -425,6 +516,50 @@ static int genLLVMBitcode(const mlir::OwningOpRef<ModuleOp> &module,
   // Write unoptimized bitcode to a file.
   llvm::WriteBitcodeToFile(*llvmModule, moduleBitcodeStream);
   moduleBitcodeStream.flush();
+
+  if (useTAFFO) {
+    auto taffoPath = llvm::sys::findProgramByName("taffo");
+
+    if (!taffoPath) {
+      return CompilerFailureInTAFFO;
+    }
+
+    std::string taffoOutputFileName = outputNameNoExt + ".taffo.ll";
+
+    llvm::FileRemover taffoLLRemover(
+        taffoOutputFileName, !keepFiles(KeepFilesOfType::LLVMIR));
+
+    llvm::SmallVector<llvm::StringRef> taffoArgs;
+    taffoArgs.push_back(*taffoPath);
+    taffoArgs.push_back(llvmirNameWithExt);
+    taffoArgs.push_back("-o");
+    taffoArgs.push_back(taffoOutputFileName);
+    taffoArgs.push_back("-emit-llvm");
+
+    if (debugTAFFO) {
+      taffoArgs.push_back("-debug-taffo");
+    }
+
+    if (int taffoRc = llvm::sys::ExecuteAndWait(*taffoPath, taffoArgs);
+        taffoRc != 0) {
+      return CompilerFailureInTAFFO;
+    }
+
+    // Use the LLVM's 'opt' command to optimize the bitcode.
+    std::string optPath = getToolPath("opt", kOptPath);
+    Command optBitcode(/*exePath=*/optPath);
+    setXoptOption({"--code-model", modelSizeStr[modelSize]});
+    int rc = optBitcode.appendStr(getOptimizationLevelOption())
+                 .appendStr(getTargetTripleOption())
+                 .appendStr(getTargetArchOption())
+                 .appendStr(getTargetCPUOption())
+                 .appendList(getXoptOption())
+                 .appendStr(getLLVMOption())
+                 .appendList({"-o", optimizedBitcodeNameWithExt})
+                 .appendStr(taffoOutputFileName)
+                 .exec();
+    return rc != 0 ? CompilerFailureInLLVMOpt : CompilerSuccess;
+  }
 
   // Use the LLVM's 'opt' command to optimize the bitcode.
   std::string optPath = getToolPath("opt", kOptPath);

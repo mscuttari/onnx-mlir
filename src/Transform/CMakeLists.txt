@@ -59,3 +59,27 @@ add_onnx_mlir_library(OMLowerKrnlRegion
   OMSupport
   MLIRTransformUtils
   )
+
+add_onnx_mlir_library(OMConvertAllocsToGlobals
+    ConvertAllocsToGlobals.cpp
+
+    LINK_LIBS PUBLIC
+    OMSupport
+    MLIRTransformUtils
+    )
+
+add_onnx_mlir_library(OMInsertTAFFOAnnotations
+  InsertTAFFOAnnotations.cpp
+
+  LINK_LIBS PUBLIC
+  OMSupport
+  MLIRTransformUtils
+  )
+
+add_onnx_mlir_library(OMDumpKernelInputs
+    DumpKernelInputs.cpp
+
+    LINK_LIBS PUBLIC
+    OMSupport
+    MLIRTransformUtils
+    )

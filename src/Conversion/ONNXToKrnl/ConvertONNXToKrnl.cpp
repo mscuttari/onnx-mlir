@@ -172,13 +172,29 @@ std::map<std::string, std::string> ONNXEntryPointLowering::typeMap = {
     {std::string(" ui16 "), std::string(" \"ui16\" ")},
     {std::string(" ui8 "), std::string(" \"ui8\" ")}};
 
+
+class ONNPrintOpLowering : public OpConversionPattern<ONNXPrintOp> {
+public:
+  using OpConversionPattern<ONNXPrintOp>::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(
+      ONNXPrintOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter &rewriter) const override {
+
+    rewriter.updateRootInPlace(op,
+        [&] { op->setOperands(adaptor.getOperands()); });
+
+    return success();
+  }
+};
+
 void populateONNXToKrnlConversionPattern(RewritePatternSet &patterns,
     TypeConverter &typeConverter, MLIRContext *ctx, DimAnalysis *dimAnalysis,
     bool enableTiling, bool enableSIMD, bool enableParallel) {
   // clang-format off
   // Type conversion for function signatures.
   // Call MLIR FuncOp signature conversion when result type is a ranked tensor.
-  populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(patterns, typeConverter);
+ populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(patterns, typeConverter);
   populateCallOpTypeConversionPattern(patterns, typeConverter);
   populateReturnOpTypeConversionPattern(patterns, typeConverter);
 
@@ -265,6 +281,8 @@ void populateONNXToKrnlConversionPattern(RewritePatternSet &patterns,
   // Additional
   populateLoweringONNXShapeTransformOpPattern(patterns, typeConverter, ctx);
   populateLoweringONNXCustomOpPattern(patterns, typeConverter, ctx);
+
+  patterns.insert<ONNPrintOpLowering>(typeConverter, ctx);
   // clang-format on
 }
 
@@ -417,6 +435,11 @@ void FrontendToKrnlLoweringPass::runOnOperation() {
   target.addDynamicallyLegalOp<mlir::func::ReturnOp>([&](Operation *op) {
     return llvm::none_of(op->getOperandTypes(),
         [](Type type) { return type.isa<TensorType>(); });
+  });
+
+  target.addDynamicallyLegalOp<ONNXPrintOp>([&](ONNXPrintOp op) {
+    return llvm::none_of(op->getOperandTypes(),
+        [](Type type) { return llvm::isa<TensorType>(type); });
   });
 
   // Define patterns.
