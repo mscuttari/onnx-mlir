@@ -147,7 +147,7 @@ LogicalResult InsertTAFFOAnnotationsPass::annotateMainGraphFunctionArgs(
          builder, ptr.getLoc(), moduleOp,
          "annotation_" + std::to_string(annotationsCounter++),
          targetStr + " scalar(range(" + std::to_string(lowerBound) + ", " +
-             std::to_string(upperBound) + ") final disabled)");
+             std::to_string(upperBound) + ") final)");
 
      Value lineNumber = builder.create<LLVM::ConstantOp>(
          loc, builder.getI32IntegerAttr(0));
@@ -218,7 +218,7 @@ LogicalResult InsertTAFFOAnnotationsPass::annotateMainGraphFunctionMallocs(
          builder, ptr.getLoc(), moduleOp,
          "annotation_" + std::to_string(annotationsCounter++),
          "scalar(range(" + std::to_string(lowerBound) + ", " +
-             std::to_string(upperBound) + ") final disabled)");
+             std::to_string(upperBound) + ") final)");
 
      Value lineNumber = builder.create<LLVM::ConstantOp>(
          loc, builder.getI32IntegerAttr(0));
@@ -250,7 +250,7 @@ LogicalResult InsertTAFFOAnnotationsPass::annotateMainGraphFunctionMallocs(
          builder, ptr.getLoc(), moduleOp,
          "annotation_" + std::to_string(annotationsCounter++),
          "scalar(range(" + std::to_string(lowerBound) + ", " +
-             std::to_string(upperBound) + ") final disabled)");
+             std::to_string(upperBound) + ") final)");
 
      Value lineNumber = builder.create<LLVM::ConstantOp>(
          loc, builder.getI32IntegerAttr(0));

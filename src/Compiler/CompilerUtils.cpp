@@ -18,6 +18,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ModRef.h"
@@ -375,7 +376,47 @@ std::string getTargetFilename(
   llvm_unreachable("all cases should be handled in switch");
 }
 
+llvm::Function* getMainGraphFunction(llvm::Module& llvmModule) {
+  for (llvm::Function& function : llvmModule) {
+    // Check if the function has the name "main"
+    if (function.getName() == "main_graph") {
+      return &function;
+    }
+  }
+
+  llvm_unreachable("Function not found");
+  return nullptr;
+}
+
+static void insertTAFFOEntryPointAnnotation(llvm::Module& llvmModule) {
+  llvm::IRBuilder<> builder(llvmModule.getContext());
+  auto i8Type = llvm::IntegerType::get(llvmModule.getContext(), 8);
+  auto i8PtrType = llvm::PointerType::get(i8Type, 0);
+
+  llvm::FunctionType *mainFunctionType = llvm::FunctionType::get(builder.getInt32Ty(), false);
+  llvm::Function* mainGraphFunction = getMainGraphFunction(llvmModule);
+
+  llvm::Type *i8PointerType = builder.getInt8PtrTy();
+  llvm::Constant *bitcastValue = llvm::ConstantExpr::getBitCast(mainGraphFunction, i8PointerType);
+
+  llvm::GlobalVariable* vraStartingFunction = new llvm::GlobalVariable(
+      llvmModule,
+      i8PointerType,
+      false,
+      llvm::GlobalVariable::InternalLinkage,
+      bitcastValue,
+      "__taffo_vra_starting_function",
+      nullptr,
+      llvm::GlobalVariable::NotThreadLocal,
+      0, true
+  );
+
+  vraStartingFunction->setAlignment(llvm::Align(8));
+}
+
 static void insertTAFFOAnnotations(llvm::Module& llvmModule) {
+  insertTAFFOEntryPointAnnotation(llvmModule);
+
   llvm::SmallVector<llvm::GlobalVariable*> globals;
 
   for (auto& global : llvmModule.globals()) {
@@ -392,7 +433,7 @@ static void insertTAFFOAnnotations(llvm::Module& llvmModule) {
 
   std::string annotationStr =
       "target('onnx') scalar(range(" + std::to_string(TAFFOlb) + ", " +
-      std::to_string(TAFFOub) + ") final disabled)";
+      std::to_string(TAFFOub) + ") final)";
 
   auto* annotation = new llvm::GlobalVariable(
       llvmModule,
