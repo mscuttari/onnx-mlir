@@ -301,6 +301,10 @@ llvm::cl::opt<double> TAFFOub("TAFFOub",
     llvm::cl::desc("TAFFO: upper bound"), llvm::cl::init(0),
     llvm::cl::cat(OnnxMlirOptions));
 
+llvm::cl::opt<int> TAFFOminFractBits("TAFFOminFractBits",
+    llvm::cl::desc("minimum number of fractional bits for TAFFO"), llvm::cl::init(3),
+    llvm::cl::cat(OnnxMlirOptions));
+
 llvm::cl::opt<bool> dumpKernelInputs("dumpKernelInputs",
     llvm::cl::desc("dump kernel inputs"), llvm::cl::init(false),
     llvm::cl::cat(OnnxMlirOptions));

@@ -577,6 +577,11 @@ static int genLLVMBitcode(const mlir::OwningOpRef<ModuleOp> &module,
     taffoArgs.push_back(taffoOutputFileName);
     taffoArgs.push_back("-emit-llvm");
 
+    taffoArgs.push_back("-Xdta");
+    taffoArgs.push_back("-minfractbits");
+    taffoArgs.push_back("-Xdta");
+    taffoArgs.push_back(std::to_string(TAFFOminFractBits));
+
     if (debugTAFFO) {
       taffoArgs.push_back("-debug-taffo");
     }

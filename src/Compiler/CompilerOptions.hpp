@@ -96,6 +96,7 @@ extern llvm::cl::opt<bool> useTAFFO;
 extern llvm::cl::opt<bool> debugTAFFO;
 extern llvm::cl::opt<double> TAFFOlb;
 extern llvm::cl::opt<double> TAFFOub;
+extern llvm::cl::opt<int> TAFFOminFractBits;
 extern llvm::cl::opt<bool> dumpKernelInputs;
 
 // The customEnvFlags must be scanned before the normal options.
