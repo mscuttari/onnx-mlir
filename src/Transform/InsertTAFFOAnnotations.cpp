@@ -39,17 +39,17 @@ namespace {
      OpBuilder builder(moduleOp);
      size_t annotationsCounter = 0;
 
-     if (failed(annotateMainGraphFunction(
-             builder, moduleOp, annotationsCounter))) {
-       return signalPassFailure();
-     }
-
      /*
      if (failed(annotateMainGraphInterfaceFunction(
              builder, moduleOp, annotationsCounter))) {
        return signalPassFailure();
      }
-      */
+     */
+
+     if (failed(annotateMainGraphFunction(
+             builder, moduleOp, annotationsCounter))) {
+       return signalPassFailure();
+     }
    }
 
    LogicalResult annotateMainGraphFunction(
@@ -67,7 +67,6 @@ namespace {
        LLVM::LLVMFuncOp funcOp,
        size_t& annotationsCounter);
 
-   /*
    LogicalResult annotateMainGraphInterfaceFunction(
        OpBuilder& builder,
        ModuleOp moduleOp,
@@ -81,7 +80,6 @@ namespace {
        ArrayRef<Type> inputTypes,
        Type resultType,
        size_t& annotationsCounter);
-       */
 
    Type getVoidPtrType();
 
@@ -268,7 +266,6 @@ LogicalResult InsertTAFFOAnnotationsPass::annotateMainGraphFunctionMallocs(
    return success();
 }
 
-/*
 static void getMainGraphCallOp(
     LLVM::LLVMFuncOp funcOp, llvm::SmallVectorImpl<LLVM::CallOp>& callOps)
 {
@@ -298,9 +295,41 @@ InsertTAFFOAnnotationsPass::annotateMainGraphInterfaceFunction(
    llvm::SmallVector<LLVM::CallOp> callOps;
    getMainGraphCallOp(funcOp, callOps);
 
+   auto annotateFn = [&](mlir::Value ptr) {
+     if (ptr.getType() != getVoidPtrType()) {
+       ptr = builder.create<LLVM::BitcastOp>(ptr.getLoc(), getVoidPtrType(), ptr);
+     }
+
+     Value annotation1 = getOrCreateGlobalString(
+         builder, ptr.getLoc(), moduleOp,
+         "annotation_" + std::to_string(annotationsCounter++),
+         "target('onnx') scalar(range(" + std::to_string(lowerBound) +
+             ", " + std::to_string(upperBound) + "))");
+
+     Value lineNumber1 = builder.create<LLVM::ConstantOp>(
+         ptr.getLoc(), builder.getI32IntegerAttr(0));
+
+     Value nullptrValue1 = builder.create<LLVM::NullOp>(
+         ptr.getLoc(), getVoidPtrType());
+
+     Value fileNameValue = getOrCreateGlobalString(
+         builder, moduleOp.getLoc(), moduleOp,
+         "fileName", "");
+
+     builder.create<LLVM::VarAnnotation>(
+         ptr.getLoc(), ptr, annotation1, fileNameValue, lineNumber1, nullptrValue1);
+   };
+
    size_t mediatorsCounter = 0;
 
    for (LLVM::CallOp callOp : callOps) {
+     /*
+     builder.setInsertionPoint(callOp);
+
+     annotateFn(callOp.getOperand(0));
+     annotateFn(callOp.getOperand(1));
+     */
+
      builder.setInsertionPoint(callOp);
 
      SmallVector<Type> inputTypes;
@@ -322,9 +351,7 @@ InsertTAFFOAnnotationsPass::annotateMainGraphInterfaceFunction(
 
    return success();
 }
-*/
 
-/*
 LLVM::LLVMFuncOp InsertTAFFOAnnotationsPass::createMediatorFunction(
     OpBuilder& builder, ModuleOp moduleOp, Location loc,
     size_t& mediatorsCounter,
@@ -341,34 +368,38 @@ LLVM::LLVMFuncOp InsertTAFFOAnnotationsPass::createMediatorFunction(
    Block* entryBlock = funcOp.addEntryBlock();
    builder.setInsertionPointToStart(entryBlock);
 
-   Value ptr = funcOp.getArgument(0);
+   auto annotateFn = [&](mlir::Value ptr) {
+     if (ptr.getType() != getVoidPtrType()) {
+       ptr = builder.create<LLVM::BitcastOp>(loc, getVoidPtrType(), ptr);
+     }
 
-   if (ptr.getType() != getVoidPtrType()) {
-     ptr = builder.create<LLVM::BitcastOp>(loc, getVoidPtrType(), ptr);
-   }
+     Value annotation1 = getOrCreateGlobalString(
+         builder, ptr.getLoc(), moduleOp,
+         "annotation_" + std::to_string(annotationsCounter++),
+         "target('onnx') scalar(range(" + std::to_string(lowerBound) +
+             ", " + std::to_string(upperBound) + "))");
 
-   Value annotation = getOrCreateGlobalString(
-       builder, ptr.getLoc(), moduleOp,
-       "annotation_" + std::to_string(annotationsCounter++),
-       "scalar(range(-3000, 3000))");
+     Value lineNumber1 = builder.create<LLVM::ConstantOp>(
+         loc, builder.getI32IntegerAttr(0));
 
-   Value lineNumber = builder.create<LLVM::ConstantOp>(
-       loc, builder.getI32IntegerAttr(0));
+     Value nullptrValue1 = builder.create<LLVM::NullOp>(
+         loc, getVoidPtrType());
 
-   Value nullptrValue = builder.create<LLVM::NullOp>(
-       loc, getVoidPtrType());
+     Value fileNameValue = getOrCreateGlobalString(
+         builder, moduleOp.getLoc(), moduleOp,
+         "fileName", "");
+
+     builder.create<LLVM::VarAnnotation>(
+         loc, ptr, annotation1, fileNameValue, lineNumber1, nullptrValue1);
+   };
+
+   annotateFn(funcOp.getArgument(0));
+   annotateFn(funcOp.getArgument(1));
 
    //if (failed(createVarAnnotation(
    //        builder, moduleOp, ptr.getLoc(), ptr, annotation, 0))) {
    //  return failure();
    //}
-
-   Value fileNameValue = getOrCreateGlobalString(
-       builder, moduleOp.getLoc(), moduleOp,
-       "fileName", "");
-
-   builder.create<LLVM::VarAnnotation>(
-       loc, ptr, annotation, fileNameValue, lineNumber, nullptrValue);
 
    auto callOp = builder.create<LLVM::CallOp>(
        loc, resultType, "main_graph", funcOp.getArguments());
@@ -376,7 +407,6 @@ LLVM::LLVMFuncOp InsertTAFFOAnnotationsPass::createMediatorFunction(
    builder.create<LLVM::ReturnOp>(loc, callOp.getResults());
    return funcOp;
 }
- */
 
 Type InsertTAFFOAnnotationsPass::getVoidPtrType()
 {
